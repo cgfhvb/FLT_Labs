@@ -1,0 +1,197 @@
+$ENTRY Go {
+  = <ReadRules 1 <NoSpaces <Card>>>;
+}
+
+ReadRules {
+  s.Number 0 =;
+  s.Number e.Line 0 = <Parse s.Number e.Line>;
+  s.Number = <ReadRules s.Number <NoSpaces <Card>>>;
+  s.Number e.Line
+    = <Parse s.Number e.Line>
+      <ReadRules <Add s.Number 1> <NoSpaces <Card>>>;
+}
+
+NoSpaces {
+  =;
+  ' ' e.Rest = <NoSpaces e.Rest>;
+  '\t' e.Rest = <NoSpaces e.Rest>;
+  '\r' e.Rest = <NoSpaces e.Rest>;
+  s.Letter e.Rest = s.Letter <NoSpaces e.Rest>;
+}
+
+Parse {
+  s.Number =;
+  s.Number '^' e.Left '$=^' e.Right '$',
+    <Variable () e.Left> : Good (e.Variable),
+    <Variable (e.Variable) e.Right> : Good (e.Variable)
+    = <Compile s.Number (<Normalize (e.Variable) e.Left>)
+        (<Normalize (e.Variable) e.Right>)>;
+  s.Number e.Invalid = <Prout '# ERROR in rule ' <Symb s.Number>> <Exit 1>;
+}
+
+Variable {
+  (e.Variable) = Good (e.Variable);
+  (e.Variable) s.Letter e.Rest,
+    'abcdefghijklmnopqrstuvwxyz' : e.Before s.Letter e.After
+    = <Variable (e.Variable) e.Rest>;
+  () s.Letter e.Rest,
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZ' : e.Before s.Letter e.After
+    = <Variable (s.Letter) e.Rest>;
+  (s.Letter) s.Letter e.Rest = <Variable (s.Letter) e.Rest>;
+  (e.Variable) e.Invalid = Bad;
+}
+
+Normalize {
+  (e.Variable) =;
+  (s.Variable) s.Variable e.Rest = 'X' <Normalize (s.Variable) e.Rest>;
+  (e.Variable) s.Letter e.Rest = s.Letter <Normalize (e.Variable) e.Rest>;
+}
+
+State {
+  s.Rule s.Position e.Phase
+    = ('Q' <Symb s.Rule> '_' <Symb s.Position> '_' e.Phase);
+}
+
+Emit {
+  (e.Left) (e.Right) = <Prout <Text e.Left> '-> ' <Text e.Right>>;
+}
+
+Text {
+  =;
+  (e.Name) e.Rest = e.Name ' ' <Text e.Rest>;
+}
+
+Alphabet {
+  e.Prefix = <Tokens (e.Prefix) 'abcdefghijklmnopqrstuvwxyz'>;
+}
+
+Tokens {
+  (e.Prefix) =;
+  (e.Prefix) s.Letter e.Rest
+    = (e.Prefix s.Letter) <Tokens (e.Prefix) e.Rest>;
+}
+
+Compile {
+  s.Rule (e.Left) (e.Right)
+    = <Common s.Rule>
+      <Emit (('^')) (('L') <State s.Rule 0 'p'>)>
+      <Before s.Rule 0 (e.Left) (e.Right)>;
+}
+
+Before {
+  s.Rule s.Position () (e.Right)
+    = <Emit (<State s.Rule s.Position 'p'> ('$'))
+        (('D') ('H') <State s.Rule 0 'o'> ('$'))>
+      <Output s.Rule 0 e.Right>;
+  s.Rule s.Position ('X' e.Rest) (e.Right)
+    = <Right <State s.Rule s.Position 'p'> <Alphabet>>
+      <Emit (<State s.Rule s.Position 'p'>)
+        (('D') <State s.Rule <Add s.Position 1> 'p'>)>
+      <After s.Rule <Add s.Position 1> (e.Rest) (e.Right)>;
+  s.Rule s.Position (s.Letter e.Rest) (e.Right)
+    = <Emit (<State s.Rule s.Position 'p'> (s.Letter))
+        (<State s.Rule <Add s.Position 1> 'p'>)>
+      <Before s.Rule <Add s.Position 1> (e.Rest) (e.Right)>;
+}
+
+After {
+  s.Rule s.Position () (e.Right)
+    = <Emit (<State s.Rule s.Position 'p'> ('$'))
+        (('H') <State s.Rule 0 'o'> ('$'))>
+      <Output s.Rule 0 e.Right>;
+  s.Rule s.Position ('X' e.Rest) (e.Right)
+    = <Scan s.Rule s.Position Compare
+        <State s.Rule s.Position 'p'>
+        <State s.Rule <Add s.Position 1> 'p'>>
+      <After s.Rule <Add s.Position 1> (e.Rest) (e.Right)>;
+  s.Rule s.Position (s.Letter e.Rest) (e.Right)
+    = <Emit (<State s.Rule s.Position 'p'> (s.Letter))
+        (<State s.Rule <Add s.Position 1> 'p'>)>
+      <After s.Rule <Add s.Position 1> (e.Rest) (e.Right)>;
+}
+
+Output {
+  s.Rule s.Position = <Emit (<State s.Rule s.Position 'o'>) (('Z'))>;
+  s.Rule s.Position 'X' e.Rest
+    = <Scan s.Rule s.Position Copy
+        <State s.Rule s.Position 'o'>
+        <State s.Rule <Add s.Position 1> 'o'>>
+      <Output s.Rule <Add s.Position 1> e.Rest>;
+  s.Rule s.Position s.Letter e.Rest
+    = <Emit (<State s.Rule s.Position 'o'>)
+        ((s.Letter) <State s.Rule <Add s.Position 1> 'o'>)>
+      <Output s.Rule <Add s.Position 1> e.Rest>;
+}
+
+Right {
+  t.State =;
+  t.State t.Letter e.Rest
+    = <Emit (t.State t.Letter) (t.Letter t.State)> <Right t.State e.Rest>;
+}
+
+Left {
+  t.State =;
+  t.State t.Letter e.Rest
+    = <Emit (t.Letter t.State) (t.State t.Letter)> <Left t.State e.Rest>;
+}
+
+Scan {
+  s.Rule s.Position s.Mode t.Start t.Next,
+    <State s.Rule s.Position <Explode s.Mode> 'back'> : t.Back,
+    <State s.Rule s.Position <Explode s.Mode> 'read'> : t.Read,
+    <State s.Rule s.Position <Explode s.Mode> 'restore'> : t.Restore,
+    <State s.Rule s.Position <Explode s.Mode> 'forward'> : t.Forward
+    = <Emit (t.Start) (t.Back)>
+      <Left t.Back <Alphabet> <Alphabet 'M'> ('D')>
+      <Emit (('L') t.Back) (('L') t.Read)>
+      <Right t.Read <Alphabet 'M'>>
+      <ScanLetters s.Rule s.Position s.Mode t.Back t.Read t.Restore
+        'abcdefghijklmnopqrstuvwxyz'>
+      <Emit (t.Read ('D')) (t.Restore ('D'))>
+      <Emit (('L') t.Restore) (('L') t.Forward)>
+      <Right t.Forward <Alphabet>>
+      <ScanEnd s.Mode t.Back t.Forward t.Next>;
+}
+
+ScanLetters {
+  s.Rule s.Position s.Mode t.Back t.Read t.Restore =;
+  s.Rule s.Position s.Mode t.Back t.Read t.Restore s.Letter e.Rest,
+    <State s.Rule s.Position <Explode s.Mode> 'carry' s.Letter> : t.Carry,
+    <State s.Rule s.Position <Explode s.Mode> 'target' s.Letter> : t.Target
+    = <Emit (t.Read (s.Letter)) (('M' s.Letter) t.Carry)>
+      <Right t.Carry <Alphabet>>
+      <Emit (t.Carry ('D')) (('D') t.Target)>
+      <Transfer s.Mode s.Letter t.Target t.Back>
+      <Emit (('M' s.Letter) t.Restore) (t.Restore (s.Letter))>
+      <ScanLetters s.Rule s.Position s.Mode t.Back t.Read t.Restore e.Rest>;
+}
+
+Transfer {
+  Compare s.Letter t.Target t.Back = <Emit (t.Target (s.Letter)) (t.Back)>;
+  Copy s.Letter t.Target t.Back
+    = <Right t.Target <Alphabet> ('H')>
+      <Emit (t.Target ('$')) ((s.Letter) t.Back ('$'))>;
+}
+
+ScanEnd {
+  Compare t.Back t.Forward t.Next = <Emit (t.Forward ('D')) (('D') t.Next)>;
+  Copy t.Back t.Forward t.Next
+    = <Left t.Back ('H')>
+      <Right t.Forward ('D') ('H')>
+      <Emit (t.Forward ('$')) (t.Next ('$'))>;
+}
+
+Common {
+  1
+    = <Left ('Z') <Alphabet>>
+      <Emit (('H') ('Z')) (('E'))>
+      <Erase ('E') <Alphabet> ('D')>
+      <Emit (('L') ('E')) (('^'))>;
+  s.Other =;
+}
+
+Erase {
+  t.State =;
+  t.State t.Letter e.Rest
+    = <Emit (t.Letter t.State) (t.State)> <Erase t.State e.Rest>;
+}
